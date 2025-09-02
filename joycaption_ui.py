@@ -466,25 +466,18 @@ class JoyCaptionImageAnalyzerUI:
         except Exception as e:
             self.root.after(0, self.show_error, str(e))
     
-    def load_model_and_tokenizer(self):
-        """Load JoyCaption with Llava15ChatHandler so vision actually binds."""
-        if not HAS_LLAMA_CPP:
-            raise ImportError("llama-cpp-python is required. pip install llama-cpp-python")
-        if not os.path.exists(CONFIG['model_path']):
-            raise FileNotFoundError(f"Model file not found: {CONFIG['model_path']}")
 
+    def load_model_and_tokenizer(self):
         mmproj = CONFIG.get('mmproj_path')
         if not mmproj or not os.path.exists(mmproj):
             raise FileNotFoundError(f"mmproj file not found: {mmproj}")
 
-        # Create the LLaVA 1.5 chat handler using the projector (SigLIP) gguf
         chat_handler = Llava15ChatHandler(clip_model_path=mmproj)
 
-        # Important: pass chat_handler to Llama; do not set chat_format manually
         llm = Llama(
             model_path=CONFIG['model_path'],
             chat_handler=chat_handler,
-            n_ctx=CONFIG.get('n_ctx', 16384),
+            n_ctx=CONFIG.get('n_ctx', 8192),      # consider 8192 or 16384
             n_gpu_layers=CONFIG.get('n_gpu_layers', -1),
             n_batch=CONFIG.get('n_batch', 1024),
             logits_all=False,
@@ -493,9 +486,8 @@ class JoyCaptionImageAnalyzerUI:
         return llm
 
 
-
     def process_single_image(self, image_path, prompt):
-        """Inference using Llava15ChatHandler: structured content with image_url + text."""
+        """Llava15ChatHandler: pass image and prompt as separate parts in the first user turn."""
         try:
             # Validate + prepare
             self.validate_image(image_path)
@@ -510,48 +502,49 @@ class JoyCaptionImageAnalyzerUI:
             img_data_url = f"data:{mime};base64,{img_b64}"
 
             if proc_path != image_path and os.path.exists(proc_path):
-                try: os.remove(proc_path)
-                except: pass
+                try:
+                    os.remove(proc_path)
+                except:
+                    pass
 
-            # System instruction to reduce hallucination
+            # Keep system concise but firm
             system_prompt = (
                 "You are a grounded vision assistant. Only describe what is clearly visible. "
                 "If anything is uncertain or not visible, say 'cannot determine'. Do not guess."
             )
 
-            # Structured content: image first, then text (as in your working example)
+            # IMPORTANT: structured parts; use key 'text' for the text part
+            user_content = [
+                {"type": "image_url", "image_url": {"url": img_data_url}},
+                {"type": "text", "text": prompt.strip()},
+            ]
+
             messages = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": [
-                    {"type": "image_url", "image_url": {"url": img_data_url}},
-                    {"type": "text", "content": prompt.strip()},
-                ]},
+                {"role": "user", "content": user_content},
             ]
 
             gen_kwargs = dict(
                 messages=messages,
-                max_tokens=CONFIG.get('max_new_tokens', 2048),
+                max_tokens=CONFIG.get('max_new_tokens', 512),
                 temperature=0.0,
                 top_p=0.7,
                 top_k=20,
                 repeat_penalty=1.15,
-                stop=["</s>", "Human:", "Assistant:", "\n\n"],  # as in your working code
+                stop=["</s>", "Human:", "Assistant:", "ASSISTANT:", "\n\n"],
             )
 
-            last_err = None
-            for attempt in range(CONFIG.get('max_retries', 3)):
-                try:
-                    resp = self.model.create_chat_completion(**gen_kwargs)
-                    answer = resp['choices'][0]['message']['content'].strip()
-                    if len(answer) < 10 and attempt < CONFIG.get('max_retries', 3) - 1:
-                        continue
-                    return {'file_path': image_path, 'success': True, 'error': None, 'response': answer}
-                except Exception as e:
-                    last_err = str(e)
-                    if attempt == CONFIG.get('max_retries', 3) - 1:
-                        return {'file_path': image_path, 'success': False, 'error': last_err, 'response': None}
+            # Optional debug: inspect what’s being sent
+            # import json; print("[DEBUG] messages:", json.dumps(messages, ensure_ascii=False)[:500], "...")
 
-            return {'file_path': image_path, 'success': False, 'error': last_err or "Unknown failure", 'response': None}
+            resp = self.model.create_chat_completion(**gen_kwargs)
+            answer = resp['choices'][0]['message']['content']
+
+            # Clean role prefixes if they appear
+            for tag in ("ASSISTANT:", "Assistant:", "Human:", "USER:", "User:"):
+                if answer.startswith(tag):
+                    answer = answer[len(tag):].lstrip()
+            return {'file_path': image_path, 'success': True, 'error': None, 'response': answer.strip()}
 
         except Exception as e:
             return {'file_path': image_path, 'success': False, 'error': str(e), 'response': None}
