@@ -1,3 +1,4 @@
+
 # JoyCaption GGUF - Image Captioning GUI
 
 JoyCaption is a desktop GUI for image captioning using GGUF models with llama-cpp-python. It provides a user-friendly interface for analyzing images and generating detailed captions using multimodal LLMs.
@@ -19,6 +20,17 @@ JoyCaption is a desktop GUI for image captioning using GGUF models with llama-cp
 - [pyperclip](https://pypi.org/project/pyperclip/)
 - [python-dotenv](https://pypi.org/project/python-dotenv/)
 - [tkinterdnd2](https://pypi.org/project/tkinterdnd2/) (optional, for drag & drop)
+
+## Model Installation
+
+You need two files to run JoyCaption:
+
+1. **GGUF Model**
+	- Download from: [llama-joycaption-beta-one-hf-llava-i1-GGUF](https://huggingface.co/mradermacher/llama-joycaption-beta-one-hf-llava-i1-GGUF)
+2. **mmproj File**
+	- Download from: [llama-joycaption-beta-one-hf-llava-mmproj-gguf](https://huggingface.co/concedo/llama-joycaption-beta-one-hf-llava-mmproj-gguf)
+
+Place these files in a known location and select them in the GUI when prompted.
 
 ## Installation
 
